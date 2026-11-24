@@ -198,6 +198,8 @@ body.bls .hstats{grid-template-columns:1.4fr 1fr}
 .since.dangerT{color:#ff7373;font-weight:800}
 .amioChips{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:-2px}
 .amioChips .lbl{font-size:13px;color:var(--muted)}
+.amioChips .chip{background:#0a3047;border-color:#1f5f86;color:#cfeaff}
+.amioChips .chip.sel{background:var(--amio);border-color:#7dd3fc;color:#fff;box-shadow:inset 0 0 0 2px #7dd3fc}
 .maxNote{font-size:14px;color:#fca5a5;font-weight:700}
 .warnLine{background:#3f2b00;border:2px solid var(--warn);border-radius:10px;padding:8px 10px;color:#ffe2a6;font-weight:700;font-size:15px}
 .routeNote{font-size:13px;color:var(--muted);margin:0}
@@ -370,6 +372,12 @@ details.hst[open]>summary::before{content:"▾"}
 .pulseBox.wait{background:#1a222d;border-color:#3a4e66;color:var(--muted);font-size:15px}
 body.simPanelOn .pulseBox{padding:4px 10px;font-size:16px}
 body.simPanelOn .pulseBox .en{font-size:11.5px}
+.miniMon{display:flex;background:#000;border:6px solid #111;border-radius:10px;overflow:hidden;height:150px}
+.miniTrace{flex:1;position:relative;min-width:0}
+.miniTrace canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.miniTrace .lead{position:absolute;left:6px;top:3px;color:#2bff6a;font-weight:800;font-size:12px;z-index:2;font-family:var(--mono)}
+.miniHr{width:72px;flex:none;border-left:1px solid #222;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#2bff6a;font-weight:800;font-size:11px}
+.miniHr b{font-size:30px;line-height:1.1}
 .simCard{background:#0a1712;border:2px solid #2f9e74;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .simCardHd{font-size:13px;font-weight:800;color:#6ee7b7;letter-spacing:.03em}
 .simMon{font-size:20px;font-weight:800;color:#bbf7d0}
@@ -498,7 +506,9 @@ body.simPanelOn #drugCard .drug .dl span{font-size:11px;line-height:1.2}
 body.simPanelOn #drugCard .drug .dm{flex-direction:row;justify-content:space-between;align-items:baseline;font-size:11.5px}
 body.simPanelOn #drugCard .drug .dm .cnt{font-size:17px}
 body.simPanelOn #drugCard .drug.epi{order:1} body.simPanelOn #drugCard .drug.amio{order:2} body.simPanelOn #drugCard .drug.lido{order:3}
-body.simPanelOn #drugCard .amioChips{order:4;grid-column:1/3;margin:0}
+body.simPanelOn #drugCard .amioChips{order:4;grid-column:2;margin:0;flex-wrap:nowrap;gap:6px}
+body.simPanelOn #drugCard .amioChips .lbl{display:none}
+body.simPanelOn #drugCard .amioChips .chip{flex:1;min-width:0;padding:4px 4px;white-space:nowrap}
 body.simPanelOn #drugCard .drugGroup>details.nonroutine{order:5;grid-column:3;margin:0}
 body.simPanelOn #drugCard .drugGroup>details.nonroutine[open]{grid-column:1/-1}
 body.simPanelOn #drugCard .chip{min-height:38px;padding:4px 12px;font-size:14px}
@@ -2540,7 +2550,7 @@ function organized(t, rate, wide) {
 function vfWave(t) {
   const effMin = effMs() / 60000;
   const coarse = Math.max(0.35, 1 - effMin * 0.035);
-  const A = 0.62 * coarse * (0.75 + 0.25 * Math.sin(t * 0.9)) * (0.8 + 0.2 * Math.sin(t * 2.3 + 1));
+  const A = 0.8 * coarse * (0.75 + 0.25 * Math.sin(t * 0.9)) * (0.8 + 0.2 * Math.sin(t * 2.3 + 1));
   const TP = 2 * Math.PI;
   return A * (Math.sin(TP * 4.6 * t) + 0.55 * Math.sin(TP * 6.1 * t + 1.1) + 0.35 * Math.sin(TP * 3.3 * t + 2.3) + 0.25 * Math.sin(TP * 8.2 * t + 0.4)) / 1.4;
 }
@@ -2564,47 +2574,57 @@ function ecgValue(t) {
   if (COMPRESSING.has(st) && ds > 0.6) v = v * 0.35 + cprArtefact(t);
   return v + 0.012 * Math.sin(t * 2 * Math.PI * 0.33);
 }
-const Ecg = {
-  cv: null, ctx: null, W: 0, H: 0, dpr: 1, x: 0, lastT: 0, lastY: null, windowSec: 5,
-  init() {
-    this.cv = $('#ecgCanvas'); if (!this.cv) return;
-    this.ctx = this.cv.getContext('2d');
-    window.addEventListener('resize', () => this.resize());
-    const loop = () => { requestAnimationFrame(loop); this.step(performance.now() / 1000); };
-    requestAnimationFrame(loop);
-  },
-  resize() {
-    if (!this.cv) return;
-    const r = this.cv.getBoundingClientRect();
-    this.dpr = window.devicePixelRatio || 1;
-    const w = Math.max(1, Math.round(r.width * this.dpr)), h = Math.max(1, Math.round(r.height * this.dpr));
-    if (w !== this.cv.width || h !== this.cv.height) { this.cv.width = w; this.cv.height = h; }
-    this.W = w; this.H = h; this.clearAll();
-  },
-  clearAll() { if (!this.ctx) return; this.ctx.fillStyle = '#000'; this.ctx.fillRect(0, 0, this.cv.width, this.cv.height); this.x = 0; this.lastY = null; },
-  step(t) {
-    if (!S || !S.sim || !this.ctx || $('#simPanel').hidden) { this.lastT = t; return; }
-    const br = this.cv.getBoundingClientRect();
-    if (this.cv.width < 2 || Math.abs(br.width * this.dpr - this.W) > 2 || Math.abs(br.height * this.dpr - this.H) > 2) this.resize();
-    let dt = t - this.lastT; this.lastT = t;
-    if (dt <= 0) return;
-    if (dt > 1) dt = 1;
-    if (Dev.dial === 'OFF' || S.state === 'PAUSED') return;
-    const ctx = this.ctx, W = this.W, H = this.H, pxs = W / this.windowSec;
-    const n = Math.max(1, Math.round(dt * pxs));
-    ctx.strokeStyle = '#2bff6a'; ctx.lineWidth = 2 * this.dpr; ctx.lineJoin = 'round';
-    for (let i = 1; i <= n; i++) {
-      const tt = t - dt + dt * i / n;
-      const nx = this.x + dt * pxs / n;
-      let y = H * 0.55 - ecgValue(tt) * Math.min(H / 4.4, W / 3);
-      y = Math.max(2, Math.min(H - 2, y));
-      ctx.fillStyle = '#000'; ctx.fillRect(Math.floor(this.x) + 1, 0, Math.ceil(nx - this.x) + 14 * this.dpr, H);
-      if (this.lastY != null) { ctx.beginPath(); ctx.moveTo(this.x, this.lastY); ctx.lineTo(nx, y); ctx.stroke(); }
-      this.x = nx; this.lastY = y;
-      if (this.x >= W) { this.x = 0; this.lastY = null; }
+/** Sweep-style ECG renderer. One instance drives the tablet monitor, another the phone's mini strip. */
+function makeSweep(o) {
+  return {
+    cv: null, ctx: null, W: 0, H: 0, dpr: 1, x: 0, lastT: 0, lastY: null,
+    resize() {
+      if (!this.cv) return;
+      const r = this.cv.getBoundingClientRect();
+      this.dpr = window.devicePixelRatio || 1;
+      const w = Math.max(1, Math.round(r.width * this.dpr)), h = Math.max(1, Math.round(r.height * this.dpr));
+      if (w !== this.cv.width || h !== this.cv.height) { this.cv.width = w; this.cv.height = h; }
+      this.W = w; this.H = h; this.clearAll();
+      if (o.prefill && S && S.sim && w > 2) { const t = performance.now() / 1000; this.draw(t - o.windowSec, o.windowSec); this.x = 0; this.lastY = null; this.lastT = t; }
+    },
+    clearAll() { if (!this.ctx) return; this.ctx.fillStyle = '#000'; this.ctx.fillRect(0, 0, this.cv.width, this.cv.height); this.x = 0; this.lastY = null; },
+    draw(t0, dt) {
+      const ctx = this.ctx, W = this.W, H = this.H, pxs = W / o.windowSec;
+      const n = Math.max(1, Math.round(dt * pxs));
+      ctx.strokeStyle = '#2bff6a'; ctx.lineWidth = (o.lineW || 2) * this.dpr; ctx.lineJoin = 'round';
+      for (let i = 1; i <= n; i++) {
+        const tt = t0 + dt * i / n;
+        const nx = this.x + dt * pxs / n;
+        let y = H * 0.55 - ecgValue(tt) * Math.min(H / 4.4, W / 3);
+        y = Math.max(2, Math.min(H - 2, y));
+        ctx.fillStyle = '#000'; ctx.fillRect(Math.floor(this.x) + 1, 0, Math.ceil(nx - this.x) + 14 * this.dpr, H);
+        if (this.lastY != null) { ctx.beginPath(); ctx.moveTo(this.x, this.lastY); ctx.lineTo(nx, y); ctx.stroke(); }
+        this.x = nx; this.lastY = y;
+        if (this.x >= W) { this.x = 0; this.lastY = null; }
+      }
+    },
+    step(t) {
+      const cv = o.canvas();
+      if (!S || !S.sim || !cv || !cv.isConnected || !o.visible()) { this.lastT = t; return; }
+      if (cv !== this.cv) { this.cv = cv; this.ctx = cv.getContext('2d'); this.W = 0; }
+      const br = cv.getBoundingClientRect();
+      if (cv.width < 2 || Math.abs(br.width * this.dpr - this.W) > 2 || Math.abs(br.height * this.dpr - this.H) > 2) this.resize();
+      let dt = t - this.lastT; this.lastT = t;
+      if (dt <= 0) return;
+      if (dt > 1) dt = 1;
+      if (!o.drawing()) return;
+      this.draw(t - dt, dt);
     }
-  }
+  };
+}
+const Ecg = makeSweep({ canvas: () => $('#ecgCanvas'), visible: () => !$('#simPanel').hidden, drawing: () => Dev.dial !== 'OFF' && S.state !== 'PAUSED', windowSec: 5 });
+Ecg.init = function () {
+  window.addEventListener('resize', () => { Ecg.resize(); MiniEcg.resize(); });
+  const loop = () => { requestAnimationFrame(loop); const t = performance.now() / 1000; Ecg.step(t); MiniEcg.step(t); };
+  requestAnimationFrame(loop);
 };
+/* Phone: mini lead-II strip in the rhythm card (pre-filled so the whole pattern is visible at once) */
+const MiniEcg = makeSweep({ canvas: () => $('#miniEcg'), visible: () => true, drawing: () => S.state !== 'PAUSED', windowSec: 4, prefill: true, lineW: 2.2 });
 
 /* ===========================================================================
  *  DEBRIEF (shown only at the end — "debrief only" feedback)
@@ -2739,7 +2759,8 @@ function phoneCardHtml() {
   const r = RH[S.sim.rhythm], c = lastCheck();
   let h = `<div class="simCard"><div class="simCardHd">模擬監護儀 Simulated monitor</div>`;
   if (S.mode === 'AED') h += `<div class="simMon" id="simAedTxt">${esc(aedCardText())}</div>`;
-  else h += `<div class="simMon">${esc(r.monZh)}<span class="en">${esc(r.monEn)}${r.rate ? ` · ~${r.rate}/min` : ''}</span></div>`;
+  else h += `<div class="miniMon"><div class="miniTrace"><span class="lead">II ×1</span><canvas id="miniEcg"></canvas></div>
+      <div class="miniHr"><span>HR</span><b class="mono">${r.rate ? r.rate : '---'}</b><span>/min</span></div></div>`;
   h += pulseHtml() + `</div>`;
   return h;
 }
